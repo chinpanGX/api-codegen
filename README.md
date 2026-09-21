@@ -15,6 +15,8 @@ OpenAPI仕様書(`openapi.yaml`)から、Unity(UniTask)向けのDTO(POCO)と通�
 ## Getting Started
 
 1. `config.yaml`を導入先プロジェクトの実パスに書き換える(後述)。
+   `config.yaml`はプロジェクト固有の値を持つため`.gitignore`で追跡対象外なので、
+   このリポジトリを導入するたびに新規作成する(下記の内容を参考にする)。
 2. 入力元の`openapi.yaml`を用意する。Atlasの場合は`Server/`で
    `cargo run --bin export_openapi` を実行すると`Shared/api/openapi.yaml`が生成される。
 3. `dotnet run -- generate` でC#コードを生成する(`config.yaml`の`output.dir`配下)。
@@ -31,10 +33,10 @@ input:
 
 output:
   dir: "./out/generated_csharp"                 # generateの出力先
-  namespace: "Atlas.Domain.Api"                  # 生成コードのルート名前空間
+  namespace: "Atlas.Infrastructure.Api"          # 生成コードのルート名前空間
 
 copy:
-  dest_dir: "../Client/Assets/Scripts/Domain.Api" # copyの配置先
+  dest_dir: "../Client/AtlasUnityProject/Assets/Scripts/Infrastructure/Api" # copyの配置先
 ```
 
 別プロジェクトで使う場合は、このファイルを丸ごとそのプロジェクトの値に書き換えるだけで使い回せます。
