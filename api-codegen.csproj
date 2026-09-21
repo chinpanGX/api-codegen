@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>api_codegen</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- out/generated_csharp配下はUnityEngine/UniTaskを参照する生成物(=Unity側の型)であり、
+         api-codegen自身(プレーンなdotnetコンソールアプリ)のコンパイル対象ではない -->
+    <Compile Remove="out/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <!--
+      utoipaはOpenAPI 3.1.0で出力するため、3.0までしか読めないMicrosoft.OpenApi 1.x(+Readers)は使わず、
+      3.0/3.1両対応のMicrosoft.OpenApi 2.x以降(読み込み機能もコアに統合済み、Readersパッケージ不要)を使う。
+    -->
+    <PackageReference Include="Microsoft.OpenApi" Version="3.10.2" />
+    <!-- YAML読み込みはコア本体ではなく別パッケージ(プラガブルリーダー方式)。JSONはコアのみで読める -->
+    <PackageReference Include="Microsoft.OpenApi.YamlReader" Version="3.10.2" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+
+</Project>

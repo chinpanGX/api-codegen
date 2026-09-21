@@ -1,0 +1,19 @@
+# api-codegen 設定ファイル(Atlasプロジェクト向け)。
+#
+# api-codegenはAtlas以外でも使い回せる共通ツールとして作られており、
+# プロジェクト固有のパス・名前空間はこのファイル経由で渡す(ツール本体にはハードコードしない)。
+# 別プロジェクトで使う場合は、このファイルを丸ごとその値に書き換えるだけでよい。
+
+input:
+  # OpenAPI仕様書(このファイルからの相対パス)。Server側の `cargo run --bin export_openapi` が生成する。
+  open_api_path: "../Shared/api/openapi.yaml"
+
+output:
+  # 生成したC#コードの出力先(このファイルからの相対パス)
+  dir: "./out/generated_csharp"
+  # 生成コードのルート名前空間。DTOは `{namespace}.Dto`、APIクライアントは `{namespace}.Client` に出力する
+  namespace: "Atlas.Domain.Api"
+
+copy:
+  # `dotnet run -- copy` の配置先(このファイルからの相対パス)
+  dest_dir: "../Client/Assets/Scripts/Domain.Api"
