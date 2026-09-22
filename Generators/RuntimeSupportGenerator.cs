@@ -39,6 +39,7 @@ public static class RuntimeSupportGenerator
             {{GeneratedFileHeader.Text}}using System.Text;
             using System.Text.Json;
             using Cysharp.Threading.Tasks;
+            using UnityEngine;
             using UnityEngine.Networking;
 
             namespace {{rootNamespace}}
@@ -64,7 +65,8 @@ public static class RuntimeSupportGenerator
                     private static async UniTask<UnityWebRequest> ExecuteAsync(
                         string baseUrl, string method, string path, object? body, string? accessToken)
                     {
-                        var www = new UnityWebRequest(baseUrl + path, method)
+                        var url = baseUrl + path;
+                        var www = new UnityWebRequest(url, method)
                         {
                             downloadHandler = new DownloadHandlerBuffer(),
                         };
@@ -81,11 +83,17 @@ public static class RuntimeSupportGenerator
                             www.SetRequestHeader("Authorization", $"Bearer {accessToken}");
                         }
 
-                        await www.SendWebRequest();
-
-                        if (www.result != UnityWebRequest.Result.Success)
+                        // UniTaskのSendWebRequest()拡張はHTTPエラー時にwww.resultを見て返るのではなく、
+                        // 自前でUnityWebRequestExceptionをthrowする(www.result判定を後段に置いても
+                        // 到達しない)ため、失敗経路はtry/catchで捕まえる必要がある。
+                        try
                         {
-                            throw new ApiException((int)www.responseCode, www.error, www.downloadHandler?.text);
+                            await www.SendWebRequest();
+                        }
+                        catch (UnityWebRequestException e)
+                        {
+                            Debug.LogError($"[ApiRequest] {method} {url} -> {(int)e.ResponseCode} {e.Error}\n{e.Text}");
+                            throw new ApiException((int)e.ResponseCode, $"{method} {path}: {e.Error}", e.Text);
                         }
 
                         return www;
