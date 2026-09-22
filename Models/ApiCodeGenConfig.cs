@@ -22,7 +22,7 @@ public sealed class OutputConfig
     /// <summary>生成したC#コードの出力先ディレクトリ。config.yamlからの相対パス。</summary>
     public string Dir { get; set; } = "";
 
-    /// <summary>生成コードのルート名前空間。DTOは `{Namespace}.Dto`、APIクライアントは `{Namespace}.Client` に出力する。</summary>
+    /// <summary>生成コードの名前空間。DTO・APIクライアントともにこの名前空間そのままで出力する。</summary>
     public string Namespace { get; set; } = "";
 }
 

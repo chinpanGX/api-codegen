@@ -14,7 +14,7 @@ public static class RuntimeSupportGenerator
         return $$"""
             {{GeneratedFileHeader.Text}}using System;
 
-            namespace {{rootNamespace}}.Client
+            namespace {{rootNamespace}}
             {
                 /// <summary>APIが非2xxを返した場合にスローされる例外。</summary>
                 public sealed class ApiException : Exception
@@ -41,7 +41,7 @@ public static class RuntimeSupportGenerator
             using Cysharp.Threading.Tasks;
             using UnityEngine.Networking;
 
-            namespace {{rootNamespace}}.Client
+            namespace {{rootNamespace}}
             {
                 /// <summary>各ApiClientから使う、UnityWebRequestを介した薄いJSON HTTP送受信ヘルパー。</summary>
                 public static class ApiRequest

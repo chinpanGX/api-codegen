@@ -23,7 +23,7 @@ public static class DtoGenerator
             .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.SealedKeyword))
             .AddMembers(properties);
 
-        var namespaceDeclaration = NamespaceDeclaration(ParseName($"{rootNamespace}.Dto"))
+        var namespaceDeclaration = NamespaceDeclaration(ParseName(rootNamespace))
             .AddUsings(UsingDirective(ParseName("System.Text.Json.Serialization")))
             .AddMembers(classDeclaration);
 

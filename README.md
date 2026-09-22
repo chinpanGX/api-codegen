@@ -17,8 +17,8 @@ OpenAPI仕様書(`openapi.yaml`)から、Unity(UniTask)向けのDTO(POCO)と通�
 1. `config.yaml`を導入先プロジェクトの実パスに書き換える(後述)。
    `config.yaml`はプロジェクト固有の値を持つため`.gitignore`で追跡対象外なので、
    このリポジトリを導入するたびに新規作成する(下記の内容を参考にする)。
-2. 入力元の`openapi.yaml`を用意する。Atlasの場合は`Server/`で
-   `cargo run --bin export_openapi` を実行すると`Shared/api/openapi.yaml`が生成される。
+2. 入力元の`openapi.yaml`を用意する(サーバー側のフレームワーク・ツールから
+   エクスポートする想定。生成方法はプロジェクトによって異なる)。
 3. `dotnet run -- generate` でC#コードを生成する(`config.yaml`の`output.dir`配下)。
 4. `dotnet run -- copy` で生成物をUnityプロジェクトへ配置する(`config.yaml`の`copy.dest_dir`)。
 
@@ -29,14 +29,14 @@ OpenAPI仕様書(`openapi.yaml`)から、Unity(UniTask)向けのDTO(POCO)と通�
 
 ```yaml
 input:
-  open_api_path: "../Shared/api/openapi.yaml"  # 入力元(このファイルからの相対パス)
+  open_api_path: "../path/to/openapi.yaml"      # 入力元(このファイルからの相対パス)
 
 output:
   dir: "./out/generated_csharp"                 # generateの出力先
-  namespace: "Atlas.Infrastructure.Api"          # 生成コードのルート名前空間
+  namespace: "YourApp.Infrastructure.Api"       # 生成コードの名前空間(DTO・APIクライアントともにこのまま出力する)
 
 copy:
-  dest_dir: "../Client/AtlasUnityProject/Assets/Scripts/Infrastructure/Api" # copyの配置先
+  dest_dir: "../YourUnityProject/Assets/Scripts/Infrastructure/Api" # copyの配置先
 ```
 
 別プロジェクトで使う場合は、このファイルを丸ごとそのプロジェクトの値に書き換えるだけで使い回せます。
@@ -67,7 +67,8 @@ copy:
 - OpenAPIの型は `string` / `integer` / `number` / `boolean` / `array` / `$ref` のみ対応。
   `nullable`・`oneOf`/`anyOf`・`enum`(文字列列挙)等が入力に含まれる場合は生成時にエラーになる
 - リクエストボディ・レスポンスボディとも `application/json` のみ対応
-- クエリパラメータ(`in: query`)は未対応(現状Atlas側のAPIに存在しないため)
+- クエリパラメータ(`in: query`)は未対応
 - 生成したC#コードの実コンパイル確認はUnityプロジェクト側で行う想定(このツール自体は
-  `UnityEngine`/`Cysharp.Threading.Tasks`を参照しないプレーンなdotnetコンソールアプリのため、
-  構文レベルの妥当性はRoslyn/文字列テンプレートの正しさに依存する)
+  `UnityEngine`/`Cysharp.Threading.Tasks`を参照しないプレーンなdotnetコンソールアプリのため)。
+  DTO・APIクライアントはRoslyn構文木で組み立てるため構文レベルは常に妥当。共通ランタイム
+  (`ApiRequest`/`ApiException`)のみ文字列テンプレートで組み立てている

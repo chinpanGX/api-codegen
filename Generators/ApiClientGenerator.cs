@@ -1,13 +1,16 @@
-using System.Text;
 using api_codegen.Models;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace api_codegen.Generators;
 
 /// <summary>
 /// タグ単位でまとめた`OperationInfo`から、UnityWebRequestを`UniTask`でラップした
-/// 薄い通信APIクラス(`{Tag}ApiClient`)の.csソースを組み立てる。
-/// 制御構文(コンストラクタ分岐等)を含むため、DtoGeneratorと異なりRoslynではなく
-/// 文字列テンプレートで組み立てる(master-data-pipeline/csharp-codegenのAesCryptoGeneratorと同じ方針)。
+/// 薄い通信APIクラス(`{Tag}ApiClient`)の.csソースをRoslyn構文木で組み立てる
+/// (DtoGeneratorと同じ方針。コンストラクタの分岐等は生成側のC#コードで行うため、
+/// 出力自体は常に構文的に正しい)。
 /// </summary>
 public static class ApiClientGenerator
 {
@@ -16,76 +19,136 @@ public static class ApiClientGenerator
         var className = $"{NameConversion.ToPascalCase(tag)}ApiClient";
         var requiresAuth = operations.Any(op => op.RequiresAuth);
 
-        var sb = new StringBuilder();
-        sb.Append(GeneratedFileHeader.Text);
-        sb.AppendLine("using System;");
-        sb.AppendLine($"using {rootNamespace}.Dto;");
-        sb.AppendLine("using Cysharp.Threading.Tasks;");
-        sb.AppendLine();
-        sb.AppendLine($"namespace {rootNamespace}.Client");
-        sb.AppendLine("{");
-        sb.AppendLine($"    public sealed class {className}");
-        sb.AppendLine("    {");
-        sb.AppendLine("        private readonly string _baseUrl;");
+        var members = new List<MemberDeclarationSyntax>
+        {
+            BuildField("string", "baseUrl"),
+        };
 
         if (requiresAuth)
         {
-            sb.AppendLine("        private readonly Func<string> _accessTokenProvider;");
-            sb.AppendLine();
-            sb.AppendLine($"        public {className}(string baseUrl, Func<string> accessTokenProvider)");
-            sb.AppendLine("        {");
-            sb.AppendLine("            _baseUrl = baseUrl;");
-            sb.AppendLine("            _accessTokenProvider = accessTokenProvider;");
-            sb.AppendLine("        }");
-        }
-        else
-        {
-            sb.AppendLine();
-            sb.AppendLine($"        public {className}(string baseUrl)");
-            sb.AppendLine("        {");
-            sb.AppendLine("            _baseUrl = baseUrl;");
-            sb.AppendLine("        }");
+            members.Add(BuildField("Func<string>", "accessTokenProvider"));
         }
 
-        foreach (var op in operations)
-        {
-            sb.AppendLine();
-            AppendMethod(sb, op);
-        }
+        members.Add(BuildConstructor(className, requiresAuth));
+        members.AddRange(operations.Select(BuildMethod));
 
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
+        var classDeclaration = ClassDeclaration(className)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.SealedKeyword))
+            .AddMembers(members.ToArray());
 
-        return sb.ToString();
+        var namespaceDeclaration = NamespaceDeclaration(ParseName(rootNamespace))
+            .AddUsings(
+                UsingDirective(ParseName("System")),
+                UsingDirective(ParseName("Cysharp.Threading.Tasks")))
+            .AddMembers(classDeclaration);
+
+        var compilationUnit = CompilationUnit()
+            .AddMembers(namespaceDeclaration)
+            .NormalizeWhitespace();
+
+        return GeneratedFileHeader.Text + compilationUnit.ToFullString() + Environment.NewLine;
     }
 
-    private static void AppendMethod(StringBuilder sb, OperationInfo op)
+    private static FieldDeclarationSyntax BuildField(string typeName, string fieldName)
     {
-        var accessTokenArg = op.RequiresAuth ? "_accessTokenProvider()" : "null";
-        var requestArg = op.RequestTypeName is not null ? "request" : "null";
+        return FieldDeclaration(VariableDeclaration(ParseTypeName(typeName))
+                .AddVariables(VariableDeclarator(fieldName)))
+            .AddModifiers(Token(SyntaxKind.PrivateKeyword), Token(SyntaxKind.ReadOnlyKeyword))
+            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+    }
+
+    private static ConstructorDeclarationSyntax BuildConstructor(string className, bool requiresAuth)
+    {
+        var parameters = new List<ParameterSyntax> { Parameter(Identifier("baseUrl")).WithType(ParseTypeName("string")) };
+        var assignments = new List<StatementSyntax> { AssignFieldFromParameter("baseUrl") };
+
+        if (requiresAuth)
+        {
+            parameters.Add(Parameter(Identifier("accessTokenProvider")).WithType(ParseTypeName("Func<string>")));
+            assignments.Add(AssignFieldFromParameter("accessTokenProvider"));
+        }
+
+        return ConstructorDeclaration(className)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters(parameters.ToArray())
+            .WithBody(Block(assignments));
+    }
+
+    private static StatementSyntax AssignFieldFromParameter(string name)
+    {
+        return ExpressionStatement(AssignmentExpression(
+            SyntaxKind.SimpleAssignmentExpression,
+            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(name)),
+            IdentifierName(name)));
+    }
+
+    private static MethodDeclarationSyntax BuildMethod(OperationInfo op)
+    {
+        var returnType = op.ResponseTypeName is not null
+            ? ParseTypeName($"UniTask<{op.ResponseTypeName}>")
+            : ParseTypeName("UniTask");
 
         // パスパラメータ(あれば先頭)→ボディ、の順でメソッド引数を並べる
         var parameters = op.PathParameters
-            .Select(p => $"{p.TypeName} {p.Name}")
-            .Concat(op.RequestTypeName is not null ? [$"{op.RequestTypeName} request"] : [])
+            .Select(p => Parameter(Identifier(p.Name)).WithType(ParseTypeName(p.TypeName)))
+            .Concat(op.RequestTypeName is not null
+                ? [Parameter(Identifier("request")).WithType(ParseTypeName(op.RequestTypeName))]
+                : [])
             .ToArray();
-        var parameterList = string.Join(", ", parameters);
 
-        // パスパラメータが無ければ元のパスをそのまま使い、あれば {name} をC#の文字列補間として評価する
-        // (OpenAPI上のプレースホルダ名とメソッド引数名を一致させているため、テンプレートをそのまま$"..."化できる)
-        var pathExpr = op.PathParameters.Count == 0 ? $"\"{op.Path}\"" : $"$\"{op.Path}\"";
+        var invocation = InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("ApiRequest"), BuildSendAsyncName(op)))
+            .AddArgumentListArguments(
+                Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("baseUrl"))),
+                Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(op.HttpMethod))),
+                Argument(BuildPathExpression(op)),
+                Argument(BuildRequestArgument(op)),
+                Argument(BuildAccessTokenArgument(op)));
 
-        if (op.ResponseTypeName is not null)
+        return MethodDeclaration(returnType, op.MethodName)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters(parameters)
+            .WithExpressionBody(ArrowExpressionClause(invocation))
+            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+    }
+
+    private static SimpleNameSyntax BuildSendAsyncName(OperationInfo op)
+    {
+        if (op.ResponseTypeName is null)
         {
-            sb.AppendLine($"        public UniTask<{op.ResponseTypeName}> {op.MethodName}({parameterList})");
-            sb.AppendLine(
-                $"            => ApiRequest.SendAsync<{op.ResponseTypeName}>(_baseUrl, \"{op.HttpMethod}\", {pathExpr}, {requestArg}, {accessTokenArg});");
+            return IdentifierName("SendAsync");
         }
-        else
+
+        return GenericName(Identifier("SendAsync")).AddTypeArgumentListArguments(ParseTypeName(op.ResponseTypeName));
+    }
+
+    private static ExpressionSyntax BuildPathExpression(OperationInfo op)
+    {
+        if (op.PathParameters.Count == 0)
         {
-            sb.AppendLine($"        public UniTask {op.MethodName}({parameterList})");
-            sb.AppendLine(
-                $"            => ApiRequest.SendAsync(_baseUrl, \"{op.HttpMethod}\", {pathExpr}, {requestArg}, {accessTokenArg});");
+            return LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(op.Path));
         }
+
+        // OpenAPI上のパスパラメータ名とメソッド引数名を一致させているため、
+        // パステンプレートの`{name}`をそのままC#の文字列補間の穴としてパースできる
+        return ParseExpression($"$\"{op.Path}\"");
+    }
+
+    private static ExpressionSyntax BuildRequestArgument(OperationInfo op)
+    {
+        return op.RequestTypeName is not null
+            ? IdentifierName("request")
+            : LiteralExpression(SyntaxKind.NullLiteralExpression);
+    }
+
+    private static ExpressionSyntax BuildAccessTokenArgument(OperationInfo op)
+    {
+        if (!op.RequiresAuth)
+        {
+            return LiteralExpression(SyntaxKind.NullLiteralExpression);
+        }
+
+        return InvocationExpression(
+            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("accessTokenProvider")));
     }
 }
