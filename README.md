@@ -70,5 +70,6 @@ copy:
 - クエリパラメータ(`in: query`)は未対応
 - 生成したC#コードの実コンパイル確認はUnityプロジェクト側で行う想定(このツール自体は
   `UnityEngine`/`Cysharp.Threading.Tasks`を参照しないプレーンなdotnetコンソールアプリのため)。
-  DTO・APIクライアントはRoslyn構文木で組み立てるため構文レベルは常に妥当。共通ランタイム
-  (`ApiRequest`/`ApiException`)のみ文字列テンプレートで組み立てている
+  DTO・APIクライアント・共通ランタイム(`ApiRequest`/`ApiException`)とも、Roslyn構文木で
+  組み立てるため構文レベルは常に妥当(`RuntimeSupportGenerator`はメソッド本体を
+  `SyntaxFactory.ParseStatement`でブロックごとパースする形で組み立てている)
