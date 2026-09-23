@@ -19,11 +19,37 @@ OpenAPI仕様書(`openapi.yaml`)から、Unity(UniTask)向けのDTO(POCO)と通�
    このリポジトリを導入するたびに新規作成する(下記の内容を参考にする)。
 2. 入力元の`openapi.yaml`を用意する(サーバー側のフレームワーク・ツールから
    エクスポートする想定。生成方法はプロジェクトによって異なる)。
-3. `dotnet run -- generate` でC#コードを生成する(`config.yaml`の`output.dir`配下)。
-4. `dotnet run -- copy` で生成物をUnityプロジェクトへ配置する(`config.yaml`の`copy.dest_dir`)。
+3. 下記「コマンド」の`generate`→`copy`の順に実行する。
 
-生成(`generate`)と配置(`copy`)はコマンドを分離しています
-(`master-data-pipeline`で確立した「生成と配置を分離する」規約を踏襲)。
+## コマンド
+
+作業ディレクトリは常に`api-codegen/`(このリポジトリのルート)。
+
+```bash
+dotnet run -- generate   # openapi.yaml -> config.yamlのoutput.dir配下にC#コードを生成
+dotnet run -- copy       # output.dir配下の生成物をconfig.yamlのcopy.dest_dirへコピー
+```
+
+- `generate`と`copy`はコマンドを分離しています(`master-data-pipeline`で確立した
+  「生成と配置を分離する」規約を踏襲)。`copy`は`generate`の出力(`output.dir`)を前提とするため、
+  必ず`generate`を先に実行する(`output.dir`が無い状態で`copy`だけ実行するとエラーになる)
+- 引数を省略すると`generate`として扱われる(`dotnet run`のみでも`generate`が走る)。
+  `generate`/`copy`以外の引数を渡すとエラーになる
+- `generate`・`copy`とも、出力先ディレクトリの中身を実行直前に全削除してから書き込む
+  (差分マージはしない)。`copy`の配置先(`config.yaml`の`copy.dest_dir`、通常
+  `Client/Assets/Scripts/.../Generated/`のような専用フォルダ)を手で編集していた場合は失われる
+  (生成物なので手編集しない)
+- Rust側のhandler・DTOを変更した後は、まずサーバー側で`openapi.yaml`を再生成してから
+  `generate`を実行する(入力が古いままだと反映されない。Atlasプロジェクトでの具体的な手順は
+  `api-codegen`スキル参照)
+
+### Unityの`.meta`ファイルについて
+
+`copy`は`output.dir`にある`.cs`ファイルのみをコピーし、Unity用の`.meta`ファイルは対象外です。
+配置先の既存`.meta`は削除→再作成のタイミングで失われるため、Unity Editorを開いた際に
+新しいGUIDで再生成されます。生成されたDTO/APIクライアントをInspector上のシリアライズ
+フィールド等でGUID参照している場合は再リンクが必要になる点に注意してください
+(通常のC#コードからの参照は名前空間・クラス名ベースのため影響ありません)。
 
 ## config.yaml
 
