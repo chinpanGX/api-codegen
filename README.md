@@ -77,6 +77,7 @@ copy:
     {Tag}ApiClient.cs       -- OpenAPIのtag単位でまとめた通信APIクラス
     ApiRequest.cs            -- UnityWebRequestを介した送受信の共通ヘルパー(1回だけ生成)
     ApiException.cs          -- 非2xxレスポンス時にスローされる例外(1回だけ生成)
+    IApiRequestLogger.cs     -- 送受信ログの差し込み口(1回だけ生成、下記「通信ログ」参照)
 ```
 
 - `{Tag}ApiClient`は`UnityEngine.Networking.UnityWebRequest`を`Cysharp.Threading.Tasks.UniTask`
@@ -87,6 +88,28 @@ copy:
 - OpenAPIの`security`が付いているオペレーションは`Authorization: Bearer <token>`ヘッダーを
   自動付与する(コンストラクタで渡した`Func<string>`を呼び出し時に評価する)
 - パスパラメータ(`in: path`)はメソッド引数として展開され、パステンプレートへ埋め込まれる
+
+### 通信ログ
+
+生成コードはログの出力先を決めず、`ApiRequest.Logger`(`IApiRequestLogger`、既定は`null`)に
+導入先プロジェクトが実装を設定した場合だけ、送信前(`LogRequest`)と受信後(`LogResponse`、
+非2xxも含む)に呼び出す。ツールに`Debug.Log`等の出力先やマスク対象のキーを固定で持たせないため、
+こうした方針は導入先側の実装で決める。
+
+```csharp
+public sealed class MyApiRequestLogger : IApiRequestLogger
+{
+    public void LogRequest(string method, string url, string? requestBody) { /* ... */ }
+    public void LogResponse(string method, string url, long statusCode, string? responseBody, double elapsedMilliseconds) { /* ... */ }
+}
+
+// 起動時に1回設定する(リリースビルドでは設定しない等の判断も導入先で行う)
+ApiRequest.Logger = new MyApiRequestLogger();
+```
+
+- `Authorization`ヘッダー(アクセストークン)はロガーへ渡さない。ボディ内の秘密情報の
+  伏字化は導入先のロガーで行う
+- 非2xxの場合は従来どおり`Debug.LogError`も出力する(ロガー未設定でもエラーは気付けるようにするため)
 
 ## 現時点で対応していないこと
 

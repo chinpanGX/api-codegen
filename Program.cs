@@ -110,11 +110,13 @@ static void Generate(string toolRoot, ApiCodeGenConfig config)
         Console.WriteLine($"generated: Client/{className}.cs");
     }
 
-    // 4. 共通ランタイム(ApiRequest / ApiException、1回だけ)
+    // 4. 共通ランタイム(ApiRequest / ApiException / IApiRequestLogger、1回だけ)
     File.WriteAllText(Path.Combine(clientDir, "ApiException.cs"), RuntimeSupportGenerator.GenerateApiException(rootNamespace));
     Console.WriteLine("generated: Client/ApiException.cs");
     File.WriteAllText(Path.Combine(clientDir, "ApiRequest.cs"), RuntimeSupportGenerator.GenerateApiRequest(rootNamespace));
     Console.WriteLine("generated: Client/ApiRequest.cs");
+    File.WriteAllText(Path.Combine(clientDir, "IApiRequestLogger.cs"), RuntimeSupportGenerator.GenerateApiRequestLogger(rootNamespace));
+    Console.WriteLine("generated: Client/IApiRequestLogger.cs");
 }
 
 static void Copy(string toolRoot, ApiCodeGenConfig config)

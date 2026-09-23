@@ -47,11 +47,41 @@ public static class RuntimeSupportGenerator
         return GeneratedFileHeader.Text + compilationUnit.ToFullString() + Environment.NewLine;
     }
 
+    // 生成コード自体はログの出力先(Debug.Log等)を決めず、導入先プロジェクトが実装を
+    // ApiRequest.Loggerへ差し込む。ツールを特定プロジェクトのログ方針に依存させないため。
+    public static string GenerateApiRequestLogger(string rootNamespace)
+    {
+        var interfaceDeclaration = (InterfaceDeclarationSyntax)ParseMemberDeclaration(
+            """
+            public interface IApiRequestLogger
+            {
+                void LogRequest(string method, string url, string? requestBody);
+                void LogResponse(string method, string url, long statusCode, string? responseBody, double elapsedMilliseconds);
+            }
+            """)!;
+
+        interfaceDeclaration = interfaceDeclaration.WithLeadingTrivia(DocSummary(
+            "ApiRequestの送受信を記録するロガー。ApiRequest.Loggerに設定した場合だけ呼ばれる。Authorizationヘッダーは渡さない。"));
+
+        var namespaceDeclaration = NamespaceDeclaration(ParseName(rootNamespace))
+            .AddMembers(interfaceDeclaration);
+
+        var compilationUnit = CompilationUnit()
+            .AddMembers(namespaceDeclaration)
+            .NormalizeWhitespace();
+
+        return GeneratedFileHeader.Text + compilationUnit.ToFullString() + Environment.NewLine;
+    }
+
     public static string GenerateApiRequest(string rootNamespace)
     {
+        var loggerProperty = ParseMemberDeclaration(
+                "public static IApiRequestLogger? Logger { get; set; }")!
+            .WithLeadingTrivia(DocSummary("送受信ごとに呼ばれるロガー。nullの場合は何も記録しない。"));
+
         var classDeclaration = ClassDeclaration("ApiRequest")
             .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-            .AddMembers(BuildSendAsyncGeneric(), BuildSendAsyncVoid(), BuildExecuteAsync())
+            .AddMembers(loggerProperty, BuildSendAsyncGeneric(), BuildSendAsyncVoid(), BuildExecuteAsync())
             .WithLeadingTrivia(DocSummary("各ApiClientから使う、UnityWebRequestを介した薄いJSON HTTP送受信ヘルパー。"));
 
         var namespaceDeclaration = NamespaceDeclaration(ParseName(rootNamespace))
@@ -194,13 +224,15 @@ public static class RuntimeSupportGenerator
                 .AddVariables(VariableDeclarator("request")
                     .WithInitializer(EqualsValueClause(requestObjectCreation))));
 
-        var jsonDeclaration = LocalDeclarationStatement(
-            VariableDeclaration(IdentifierName("var"))
-                .AddVariables(VariableDeclarator("json")
-                    .WithInitializer(EqualsValueClause(
-                        InvocationExpression(
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("JsonSerializer"), IdentifierName("Serialize")))
-                            .AddArgumentListArguments(Argument(IdentifierName("body")))))));
+        // ロガーへ渡すため、送信ボディのJSONはifの外で宣言する
+        var jsonDeclaration = ParseStatement("string? json = null;");
+
+        var jsonAssignment = ExpressionStatement(AssignmentExpression(
+            SyntaxKind.SimpleAssignmentExpression,
+            IdentifierName("json"),
+            InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("JsonSerializer"), IdentifierName("Serialize")))
+                .AddArgumentListArguments(Argument(IdentifierName("body")))));
 
         var uploadHandlerAssignment = ExpressionStatement(AssignmentExpression(
             SyntaxKind.SimpleAssignmentExpression,
@@ -218,7 +250,7 @@ public static class RuntimeSupportGenerator
 
         var bodyIfStatement = IfStatement(
             IsNotNull("body"),
-            Block(jsonDeclaration, uploadHandlerAssignment, contentTypeHeaderStatement));
+            Block(jsonAssignment, uploadHandlerAssignment, contentTypeHeaderStatement));
 
         var authorizationHeaderStatement = BuildSetRequestHeaderStatement(
             "Authorization", ParseExpression("$\"Bearer {accessToken}\""));
@@ -243,7 +275,10 @@ public static class RuntimeSupportGenerator
 
         var catchClause = CatchClause()
             .WithDeclaration(CatchDeclaration(ParseTypeName("UnityWebRequestException"), Identifier("e")))
-            .WithBlock(Block(logErrorStatement, throwStatement));
+            .WithBlock(Block(
+                ParseStatement("Logger?.LogResponse(method, url, e.ResponseCode, e.Text, stopwatch.Elapsed.TotalMilliseconds);"),
+                logErrorStatement,
+                throwStatement));
 
         // UniTaskのSendWebRequest()拡張はHTTPエラー時にrequest.resultを見て返るのではなく、
         // 自前でUnityWebRequestExceptionをthrowする(request.result判定を後段に置いても
@@ -266,9 +301,14 @@ public static class RuntimeSupportGenerator
             .WithBody(Block(
                 urlDeclaration,
                 requestDeclaration,
+                jsonDeclaration,
                 bodyIfStatement,
                 accessTokenIfStatement,
+                ParseStatement("Logger?.LogRequest(method, url, json);"),
+                // using System.Diagnostics; はUnityEngine.Debugと衝突するため完全修飾名で書く
+                ParseStatement("var stopwatch = System.Diagnostics.Stopwatch.StartNew();"),
                 tryStatement,
+                ParseStatement("Logger?.LogResponse(method, url, request.responseCode, request.downloadHandler.text, stopwatch.Elapsed.TotalMilliseconds);"),
                 returnRequestStatement));
 
         return WithRequestParameters(method);
